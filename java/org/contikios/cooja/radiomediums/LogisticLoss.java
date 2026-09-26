@@ -127,12 +127,6 @@ public class LogisticLoss extends AbstractRadioMedium {
      */
     private static final double CO_CHANNEL_REJECTION = -3.0;
 
-    /*
-     * The transmission power.
-     * TODO: figure out how to getCurrentOutputPowerIndicator() to dBm use that.
-     */
-    public static final double DEFAULT_TX_POWER_DBM = 0.0;
-
     /* Enable the time-varying component? */
     public boolean ENABLE_TIME_VARIATION;
 
@@ -347,21 +341,31 @@ public class LogisticLoss extends AbstractRadioMedium {
         double moteTransmissionRange = TRANSMITTING_RANGE
             * ((double) source.getCurrentOutputPowerIndicator() / (double) source.getOutputPowerIndicatorMax());
 
-        /* Using the log-distance formula */
-        double path_loss_dbm = -RX_SENSITIVITY_DBM + 10 * PATH_LOSS_EXPONENT * Math.log10(d / moteTransmissionRange);
+        /*
+         * Log-distance loss measured relative to the transmitting range: 0 dB at
+         * d == moteTransmissionRange, where the receiver sits exactly at
+         * sensitivity. Measuring it this way is why there is no transmit-power
+         * term in the RSSI below: the range above already carries the power,
+         * because the medium scales it by the radio's output power indicator.
+         *
+         * Do not add a power term here. The absolute power is not missing, it is
+         * in moteTransmissionRange; adding one would count it twice and shift
+         * every RSSI by P_tx.
+         */
+        double excess_path_loss_db = 10 * PATH_LOSS_EXPONENT * Math.log10(d / moteTransmissionRange);
 
         /* Add the time-varying component if enabled */
         if (ENABLE_TIME_VARIATION) {
             Index key = new Index(source.getMote().getID(), dst.getMote().getID());
             TimeVaryingEdge e = edgesTable.get(key);
             if (e != null) {
-                path_loss_dbm += e.getPL();
+                excess_path_loss_db += e.getPL();
             } else {
                 logger.warn("No edge between " + source.getMote().getID() + " and " + dst.getMote().getID());
             }
         }
 
-        return DEFAULT_TX_POWER_DBM - path_loss_dbm + getAWGN();
+        return RX_SENSITIVITY_DBM - excess_path_loss_db + getAWGN();
     }
 
     private void updateTimeVariationComponent() {
