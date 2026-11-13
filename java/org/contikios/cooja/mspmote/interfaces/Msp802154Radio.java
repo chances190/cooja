@@ -40,9 +40,11 @@ import org.contikios.cooja.interfaces.Position;
 import org.contikios.cooja.interfaces.Radio;
 import org.contikios.cooja.mspmote.MspMote;
 import org.contikios.cooja.mspmote.MspMoteTimeEvent;
+import org.contikios.cooja.mspmote.SkyMote;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import se.sics.mspsim.chip.CC2420;
+import se.sics.mspsim.chip.CC2520;
 import se.sics.mspsim.chip.RFListener;
 import se.sics.mspsim.chip.Radio802154;
 
@@ -405,6 +407,47 @@ public class Msp802154Radio extends Radio implements CustomDataRadio {
   @Override
   public Position getPosition() {
     return mote.getInterfaces().getPosition();
+  }
+
+  @Override
+  public void powerOff() {
+    if (radio instanceof CC2420 cc2420) {
+      cc2420.setVRegOn(false);
+    } else if (radio instanceof CC2520 cc2520) {
+      cc2520.setVRegOn(false);
+    }
+  }
+
+  public double getCurrentConsumptionMa() {
+    if (!(radio instanceof CC2420) && !(radio instanceof CC2520)) {
+      throw new UnsupportedOperationException("Energy model is unavailable for " + radio.getClass().getName());
+    }
+    if (isTransmitting()) {
+      double dbm = getCurrentOutputPower();
+      if (radio instanceof CC2420) {
+        if (dbm >= 0) return 17.4;
+        if (dbm >= -1) return 16.5;
+        if (dbm >= -3) return 15.2;
+        if (dbm >= -5) return 13.9;
+        if (dbm >= -7) return 12.5;
+        if (dbm >= -10) return 11.2;
+        if (dbm >= -15) return 9.9;
+        return 8.5;
+      }
+      if (Math.abs(dbm) < 0.01) return 25.8;
+      if (Math.abs(dbm - 5) < 0.01) return 33.6;
+      throw new UnsupportedOperationException("CC2520 TX current is unavailable at " + dbm + " dBm");
+    }
+    if (!isRadioOn()) {
+      return radio instanceof CC2420 ? 0.00002 : 0.001;
+    }
+    if (isReceiving()) {
+      return radio instanceof CC2420 ? mote instanceof SkyMote ? 19.7 : 18.8 : 18.5;
+    }
+    if (radio.isReadyToReceive()) {
+      return radio instanceof CC2420 ? mote instanceof SkyMote ? 19.7 : 18.8 : 22.3;
+    }
+    return radio instanceof CC2420 ? mote instanceof SkyMote ? 0.365 : 0.426 : 1.9;
   }
 
   @Override

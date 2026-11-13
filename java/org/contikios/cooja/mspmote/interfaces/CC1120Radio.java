@@ -389,6 +389,11 @@ public class CC1120Radio extends Radio implements CustomDataRadio {
 	}
 
 	@Override
+	public void powerOff() {
+		cc1120.powerOff();
+	}
+
+	@Override
 	public boolean isRadioOn() {
 	    return cc1120.isReadyToReceive();
 	}

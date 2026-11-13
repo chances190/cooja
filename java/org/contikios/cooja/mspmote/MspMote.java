@@ -35,15 +35,19 @@ import java.io.File;
 import java.io.PrintStream;
 import org.contikios.cooja.ContikiError;
 import org.contikios.cooja.Cooja;
+import org.contikios.cooja.EnergyState;
 import org.contikios.cooja.MoteType;
 import org.contikios.cooja.Simulation;
 import org.contikios.cooja.Simulation.SimulationStop;
 import org.contikios.cooja.Watchpoint;
 import org.contikios.cooja.WatchpointMote;
 import org.contikios.cooja.motes.AbstractEmulatedMote;
+import org.contikios.cooja.mspmote.interfaces.CC2520Radio;
+import org.contikios.cooja.mspmote.interfaces.Msp802154Radio;
 import org.contikios.cooja.mspmote.plugins.CodeVisualizerSkin;
 import org.contikios.cooja.mspmote.plugins.MspBreakpoint;
 import org.contikios.cooja.plugins.Visualizer;
+import org.contikios.cooja.util.EventTriggers;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import se.sics.mspsim.cli.CommandContext;
@@ -68,7 +72,8 @@ import se.sics.mspsim.util.MapEntry;
 /**
  * @author Fredrik Osterlind
  */
-public abstract class MspMote extends AbstractEmulatedMote<MspMoteType, MSP430, MspMoteMemory> implements WatchpointMote {
+public abstract class MspMote extends AbstractEmulatedMote<MspMoteType, MSP430, MspMoteMemory>
+    implements WatchpointMote, EnergyState {
   private static final Logger logger = LoggerFactory.getLogger(MspMote.class);
 
   private final static int EXECUTE_DURATION_US = 1; /* We always execute in 1 us steps */
@@ -81,6 +86,8 @@ public abstract class MspMote extends AbstractEmulatedMote<MspMoteType, MSP430, 
 
   private final CommandHandler commandHandler = new CommandHandler(System.out, System.err);
   public final ComponentRegistry registry;
+  private final EventTriggers<EventTriggers.Update, EnergyState> energyStateTriggers =
+      new EventTriggers<>();
 
   /* Stack monitoring variables */
   private boolean stopNextInstruction;
@@ -107,6 +114,13 @@ public abstract class MspMote extends AbstractEmulatedMote<MspMoteType, MSP430, 
     // Throw exceptions at bad memory access.
     //myCpu.setThrowIfWarning(true);
     myCpu.reset();
+    myCpu.addOperatingModeListener((source, mode) ->
+        energyStateTriggers.trigger(EventTriggers.Update.UPDATE, this));
+    var radio = getInterfaces().getRadio();
+    if (radio != null) {
+      radio.getRadioEventTriggers().addTrigger(this,
+          (event, source) -> energyStateTriggers.trigger(EventTriggers.Update.UPDATE, this));
+    }
     registry.removeComponent("windowManager");
     registry.registerComponent("windowManager", new WindowManager() {
       @Override
@@ -168,6 +182,36 @@ public abstract class MspMote extends AbstractEmulatedMote<MspMoteType, MSP430, 
   @Override
   public long getCPUCycles() {
     return myCpu.cpuCycles;
+  }
+
+  @Override
+  public EventTriggers<EventTriggers.Update, EnergyState> getEnergyStateTriggers() {
+    return energyStateTriggers;
+  }
+
+  @Override
+  public double getCurrentConsumption() {
+    if (isPoweredOff()) {
+      return 0;
+    }
+    double currentMa = myCpu.isActive() ? cpuActiveCurrentMa() : cpuLpmCurrentMa();
+    var radio = getInterfaces().getRadio();
+    if (radio instanceof Msp802154Radio mspRadio) {
+      currentMa += mspRadio.getCurrentConsumptionMa();
+    } else if (radio instanceof CC2520Radio cc2520Radio) {
+      currentMa += cc2520Radio.getCurrentConsumptionMa();
+    } else if (radio != null) {
+      throw new UnsupportedOperationException("Energy model is unavailable for " + radio.getClass().getName());
+    }
+    return currentMa / 1000;
+  }
+
+  protected double cpuActiveCurrentMa() {
+    throw new UnsupportedOperationException("CPU energy model is unavailable for " + getClass().getName());
+  }
+
+  protected double cpuLpmCurrentMa() {
+    throw new UnsupportedOperationException("CPU energy model is unavailable for " + getClass().getName());
   }
 
   @Override

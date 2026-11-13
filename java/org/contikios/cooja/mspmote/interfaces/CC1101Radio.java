@@ -382,9 +382,14 @@ public class CC1101Radio extends Radio implements CustomDataRadio {
 	}
 
 	@Override
-	public Position getPosition() {
-		return mote.getInterfaces().getPosition();
-	}
+  public Position getPosition() {
+    return mote.getInterfaces().getPosition();
+  }
+
+  @Override
+  public void powerOff() {
+    cc1101.powerOff();
+  }
 
   @Override
   public boolean isRadioOn() {

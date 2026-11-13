@@ -673,6 +673,11 @@ public class CC1101 extends Radio802154 implements USARTListener {
         public CC1101RadioState getState() {
                 return state;
         }
+
+        public void powerOff() {
+                setState(CC1101RadioState.CC1101_STATE_SLEEP);
+        }
+
         public interface StateListener {
                 void newState(CC1101RadioState state);
         }
