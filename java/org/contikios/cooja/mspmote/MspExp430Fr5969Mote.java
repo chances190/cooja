@@ -43,6 +43,16 @@ public class MspExp430Fr5969Mote extends MspMote {
     }
 
     @Override
+    protected double cpuActiveCurrentMa() {
+        return getCPUFrequency() / 1_000_000.0 * 0.1;
+    }
+
+    @Override
+    protected double cpuLpmCurrentMa() {
+        return 0.0004;
+    }
+
+    @Override
     public String toString() {
         return "FR5969 " + getID();
     }

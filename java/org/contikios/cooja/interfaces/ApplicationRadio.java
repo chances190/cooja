@@ -360,6 +360,13 @@ public class ApplicationRadio extends Radio implements NoiseSourceRadio, Directi
     return radioOn;
   }
 
+  @Override
+  public void powerOff() {
+    setReceiverOn(false);
+    isTransmitting = false;
+    isReceiving = false;
+  }
+
   /* Noise source radio support */
   @Override
   public int getNoiseLevel() {

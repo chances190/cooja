@@ -338,6 +338,30 @@ public class CC2520Radio extends Radio implements CustomDataRadio {
   }
 
   @Override
+  public void powerOff() {
+    radio.setVRegOn(false);
+  }
+
+  public double getCurrentConsumptionMa() {
+    if (isTransmitting()) {
+      double dbm = getCurrentOutputPower();
+      if (Math.abs(dbm) < 0.01) return 25.8;
+      if (Math.abs(dbm - 5) < 0.01) return 33.6;
+      throw new UnsupportedOperationException("CC2520 TX current is unavailable at " + dbm + " dBm");
+    }
+    if (!isRadioOn()) {
+      return 0.001;
+    }
+    if (isReceiving()) {
+      return 18.5;
+    }
+    if (radio.isReadyToReceive()) {
+      return 22.3;
+    }
+    return 1.9;
+  }
+
+  @Override
   public boolean isRadioOn() {
     if (radio.isReadyToReceive()) {
       return true;

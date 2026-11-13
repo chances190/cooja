@@ -776,8 +776,7 @@ public final class Simulation {
       moteTriggers.trigger(AddRemove.REMOVE, mote);
       eventCentral.removeMote(mote);
     }
-    // Delete all events associated with deleted mote.
-    eventQueue.removeIf(ev -> ev instanceof MoteTimeEvent moteTimeEvent && moteTimeEvent.getMote() == mote);
+    cancelMoteEvents(mote);
     for (var p : startedPlugins.toArray(new Plugin[0])) {
       if (p instanceof MotePlugin plugin) {
         if (mote == plugin.getMote()) {
@@ -785,6 +784,11 @@ public final class Simulation {
         }
       }
     }
+  }
+
+  public void cancelMoteEvents(Mote mote) {
+    assert isSimulationThread() : "Cancelling events from non-simulation thread";
+    eventQueue.removeIf(ev -> ev instanceof MoteTimeEvent event && event.getMote() == mote);
   }
 
   /**

@@ -136,6 +136,9 @@ public abstract class Radio implements MoteInterface {
    */
   public abstract boolean isRadioOn();
 
+  public void powerOff() {
+  }
+
   /**
    * Interferes with any current reception. If this method is called, the packet
    * will be dropped. This method can be used to simulate radio interference
