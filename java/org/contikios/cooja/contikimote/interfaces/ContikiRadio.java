@@ -161,6 +161,14 @@ public class ContikiRadio extends Radio implements PolledAfterActiveTicks {
   }
 
   @Override
+  public void powerOff() {
+    radioOn = false;
+    isTransmitting = false;
+    lastEvent = RadioEvent.HW_OFF;
+    radioEventTriggers.trigger(RadioEvent.HW_OFF, this);
+  }
+
+  @Override
   public boolean isTransmitting() {
     return isTransmitting;
   }

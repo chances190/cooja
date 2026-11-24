@@ -46,6 +46,16 @@ public class Exp5438Mote extends MspMote {
   }
 
   @Override
+  protected double cpuActiveCurrentMa() {
+    return getCPUFrequency() / 1_000_000.0 * 0.312;
+  }
+
+  @Override
+  protected double cpuLpmCurrentMa() {
+    return 0.0026;
+  }
+
+  @Override
   public String toString() {
     return description + " " + getID();
   }

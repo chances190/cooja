@@ -38,19 +38,22 @@ import org.contikios.cooja.Mote;
 import org.contikios.cooja.MoteInterfaceHandler;
 import org.contikios.cooja.MoteTimeEvent;
 import org.contikios.cooja.MoteType;
+import org.contikios.cooja.PowerOffMote;
 import org.contikios.cooja.Simulation;
 import org.contikios.cooja.TimeEvent;
 import org.contikios.cooja.Watchpoint;
 import org.contikios.cooja.mote.memory.MemoryInterface;
 import org.jdom2.Element;
 
-public abstract class AbstractWakeupMote<T extends MoteType, M extends MemoryInterface> implements Mote {
+public abstract class AbstractWakeupMote<T extends MoteType, M extends MemoryInterface>
+    implements Mote, PowerOffMote {
   protected final Simulation simulation;
   protected final T moteType;
   protected final M moteMemory;
 
   protected final MoteInterfaceHandler moteInterfaces = new MoteInterfaceHandler();
   private long nextWakeupTime = -1;
+  private boolean poweredOff;
 
   protected final ArrayList<WatchpointListener> watchpointListeners = new ArrayList<>();
   protected final ArrayList<Watchpoint> watchpoints = new ArrayList<>();
@@ -71,6 +74,30 @@ public abstract class AbstractWakeupMote<T extends MoteType, M extends MemoryInt
       return "EXECUTE " + AbstractWakeupMote.this.getClass().getName();
     }
   };
+
+  @Override
+  public void powerOff() {
+    Runnable action = () -> {
+      if (poweredOff) {
+        return;
+      }
+      poweredOff = true;
+      simulation.cancelMoteEvents(this);
+      var radio = moteInterfaces.getRadio();
+      if (radio != null) {
+        radio.powerOff();
+      }
+    };
+    if (simulation.isSimulationThread()) {
+      action.run();
+    } else {
+      simulation.invokeSimulationThread(action);
+    }
+  }
+
+  protected final boolean isPoweredOff() {
+    return poweredOff;
+  }
 
   @Override
   public int getID() {
@@ -228,6 +255,9 @@ public abstract class AbstractWakeupMote<T extends MoteType, M extends MemoryInt
    * the mote software will execute as soon as possible.
    */
   public void requestImmediateWakeup() {
+    if (poweredOff) {
+      return;
+    }
     long t = simulation.getSimulationTime();
     if (simulation.isSimulationThread()) {
       scheduleNextWakeup(t);
@@ -249,6 +279,9 @@ public abstract class AbstractWakeupMote<T extends MoteType, M extends MemoryInt
    */
   public boolean scheduleNextWakeup(long time) {
     assert simulation.isSimulationThread() : "Scheduling event from non-simulation thread (" + Thread.currentThread() + ")";
+    if (poweredOff) {
+      return false;
+    }
       
     if (executeMoteEvent.isScheduled() &&
         nextWakeupTime <= time) {
