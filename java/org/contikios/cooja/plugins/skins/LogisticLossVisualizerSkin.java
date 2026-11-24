@@ -122,16 +122,11 @@ public class LogisticLossVisualizerSkin implements VisualizerSkin {
       int x = pixelCoord.x;
       int y = pixelCoord.y;
 
-      // Fetch current output power indicator (scale with as percent)
+      // Scale by the radio's output power, the same way the medium does
       Radio selectedRadio = selectedMote.getInterfaces().getRadio();
-      double moteInterferenceRange
-              = radioMedium.INTERFERENCE_RANGE
-              * ((double) selectedRadio.getCurrentOutputPowerIndicator()
-              / (double) selectedRadio.getOutputPowerIndicatorMax());
-      double moteTransmissionRange
-              = radioMedium.TRANSMITTING_RANGE
-              * ((double) selectedRadio.getCurrentOutputPowerIndicator()
-              / (double) selectedRadio.getOutputPowerIndicatorMax());
+      double moteTransmissionRange = radioMedium.referenceDistance(selectedRadio);
+      double moteInterferenceRange = radioMedium.INTERFERENCE_RANGE
+              * (moteTransmissionRange / radioMedium.TRANSMITTING_RANGE);
 
       Point translatedZero = visualizer.transformPositionToPixel(0.0, 0.0, 0.0);
       Point translatedInterference
@@ -159,13 +154,14 @@ public class LogisticLossVisualizerSkin implements VisualizerSkin {
               2 * translatedInterference.x,
               2 * translatedInterference.y)));
 
-      /* Interference range (MAX) */
+      /* Transmission range */
       trxRangeArea.add(new Area(new Ellipse2D.Double(
               x - translatedTransmission.x,
               y - translatedTransmission.y,
               2 * translatedTransmission.x,
               2 * translatedTransmission.y)));
 
+      /* Interference range (MAX) */
       intRangeMaxArea.add(new Area(new Ellipse2D.Double(
               x - translatedInterferenceMax.x,
               y - translatedInterferenceMax.y,

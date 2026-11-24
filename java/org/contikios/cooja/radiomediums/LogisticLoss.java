@@ -67,17 +67,27 @@ import org.slf4j.LoggerFactory;
  * - `rssi` is the transmit-power minus the path loss.
  * - `rssi_50%` is the signal level at which 50% packets are received;
  * <p>
- * To model the path loss PL_{dBm}(d) this plugin uses the log-distance path loss model:
+ * The received signal strength follows the log-distance path loss model:
  * <p>
- *  PL_{dBm}(d) = PL_0 + PL_t + 10 * \alpha * \log_10 (d / d_0) + NormalDistribution(0, \sigma),
+ *  RSSI_{dBm}(d) = RX_SENSITIVITY_DBM - PL_t - 10 * \alpha * \log_10 (d / d_0) + NormalDistribution(0, \sigma),
  * <p>
  * where:
- * - `d_0` is the transmission range in meters;
- * - `PL_0` is the loss at `d_0` (i.e. the Rx sensitivity, by default equal
- *    to `-100` dBm as on the TI CC2650 System-on-Chip for IEEE 802.15.4 packets)
+ * - `d_0` is the reference distance in meters. It follows from the transmit
+ *   power rather than being configured: a radio transmitting at `P_tx` dBm has
+ *   `d_0 = TRANSMITTING_RANGE * 10^((P_tx - TX_POWER_REFERENCE_DBM) / (10 * \alpha))`,
+ *   so the transmission range is a consequence of the link budget rather than
+ *   an abstract power indicator scaling a fixed distance. This is the only
+ *   place `P_tx` enters; a separate term would count it twice.
+ * - `RX_SENSITIVITY_DBM` is the signal level at `d_0` (the receiver
+ *   sensitivity; by default `-100` dBm as on the TI CC2650 System-on-Chip for
+ *   IEEE 802.15.4 packets)
  * - `PL_t` is the time-varying component of the path loss (by default, zero)
  * - `\alpha` is the path loss exponent;
  * - `\sigma` is the standard deviation of the Additive White Gaussian Noise.
+ * <p>
+ * `P_tx` is read from the radio in dBm (`Radio.getCurrentOutputPower()`), so
+ * this medium needs a radio that reports a real output power; a radio whose
+ * output power is unknown does not vary the range.
  * <p>
  * The default value of `\alpha` (the path loss exponent) is 3.0 and the default
  * value of `\sigma` is 3.0 as well, both of which approximately correspond to
@@ -111,8 +121,17 @@ public class LogisticLoss extends AbstractRadioMedium {
      */
     public double RSSI_INFLECTION_POINT_DBM = -92.0;
 
-    /* At this distance (in meters), the RSSI is equal to the RX_SENSITIVITY_DBM */
+    /*
+     * Reference distance in meters: at TX_POWER_REFERENCE_DBM, the RSSI equals
+     * RX_SENSITIVITY_DBM at this distance. analyzeEdges() uses it as the
+     * candidate-destination bound, so TX_POWER_REFERENCE_DBM has to be the
+     * highest transmit power you will simulate.
+     */
     public double TRANSMITTING_RANGE = 20.0;
+
+    /* The transmit power at which TRANSMITTING_RANGE holds, in dBm */
+    public double TX_POWER_REFERENCE_DBM = 0.0;
+
     public double INTERFERENCE_RANGE = TRANSMITTING_RANGE;
 
     /* For the log-distance model, indoors, 2.4 GHz */
@@ -126,12 +145,6 @@ public class LogisticLoss extends AbstractRadioMedium {
      * The co-channel rejection threshold of 802.15.4 radios typically is -3 dB.
      */
     private static final double CO_CHANNEL_REJECTION = -3.0;
-
-    /*
-     * The transmission power.
-     * TODO: figure out how to getCurrentOutputPowerIndicator() to dBm use that.
-     */
-    public static final double DEFAULT_TX_POWER_DBM = 0.0;
 
     /* Enable the time-varying component? */
     public boolean ENABLE_TIME_VARIATION;
@@ -225,6 +238,7 @@ public class LogisticLoss extends AbstractRadioMedium {
 
         /* Loop through all potential destinations */
         Position senderPos = sender.getPosition();
+        double range = referenceDistance(sender);
         for (DestinationRadio dest: potentialDestinations) {
             Radio recv = dest.radio;
 
@@ -243,7 +257,7 @@ public class LogisticLoss extends AbstractRadioMedium {
             Position recvPos = recv.getPosition();
 
             double distance = senderPos.getDistanceTo(recvPos);
-            if (distance <= TRANSMITTING_RANGE) {
+            if (distance <= range) {
                 /* Within transmission range */
 
                 if (!recv.isRadioOn()) {
@@ -337,6 +351,24 @@ public class LogisticLoss extends AbstractRadioMedium {
         return random.nextGaussian() * AWGN_SIGMA;
     }
 
+    /*
+     * d0(P) = TRANSMITTING_RANGE * 10^((P - TX_POWER_REFERENCE_DBM) / (10 * alpha)).
+     * This is the whole power dependence of the model: the range follows from the
+     * transmit power instead of a power indicator scaling a configured distance.
+     */
+    static double referenceDistance(double pTxDbm, double transmittingRange,
+                                    double referenceDbm,
+                                    double pathLossExponent) {
+        return transmittingRange
+            * Math.pow(10.0, (pTxDbm - referenceDbm) / (10.0 * pathLossExponent));
+    }
+
+    /* Reference distance, in meters, for a radio's current output power. */
+    public double referenceDistance(Radio source) {
+        return referenceDistance(source.getCurrentOutputPower(), TRANSMITTING_RANGE,
+            TX_POWER_REFERENCE_DBM, PATH_LOSS_EXPONENT);
+    }
+
     private double getRSSI(Radio source, Radio dst) {
         double d = source.getPosition().getDistanceTo(dst.getPosition());
         if (d <= 0) {
@@ -344,24 +376,27 @@ public class LogisticLoss extends AbstractRadioMedium {
             d = 0.01;
         }
 
-        double moteTransmissionRange = TRANSMITTING_RANGE
-            * ((double) source.getCurrentOutputPowerIndicator() / (double) source.getOutputPowerIndicatorMax());
-
-        /* Using the log-distance formula */
-        double path_loss_dbm = -RX_SENSITIVITY_DBM + 10 * PATH_LOSS_EXPONENT * Math.log10(d / moteTransmissionRange);
+        /*
+         * Log-distance loss: zero at the reference distance, growing with the
+         * log of the distance beyond it. There is no transmit-power term here
+         * because the power is already inside referenceDistance() — the range is
+         * derived from it, which is what keeps the two from being counted twice.
+         */
+        double excess_path_loss_db =
+            10 * PATH_LOSS_EXPONENT * Math.log10(d / referenceDistance(source));
 
         /* Add the time-varying component if enabled */
         if (ENABLE_TIME_VARIATION) {
             Index key = new Index(source.getMote().getID(), dst.getMote().getID());
             TimeVaryingEdge e = edgesTable.get(key);
             if (e != null) {
-                path_loss_dbm += e.getPL();
+                excess_path_loss_db += e.getPL();
             } else {
                 logger.warn("No edge between " + source.getMote().getID() + " and " + dst.getMote().getID());
             }
         }
 
-        return DEFAULT_TX_POWER_DBM - path_loss_dbm + getAWGN();
+        return RX_SENSITIVITY_DBM - excess_path_loss_db + getAWGN();
     }
 
     private void updateTimeVariationComponent() {
@@ -453,6 +488,11 @@ public class LogisticLoss extends AbstractRadioMedium {
         element.setText(Double.toString(TRANSMITTING_RANGE));
         config.add(element);
 
+        /* Transmit power at which the reference distance holds */
+        element = new Element("tx_power_reference_dbm");
+        element.setText(Double.toString(TX_POWER_REFERENCE_DBM));
+        config.add(element);
+
         /* Transmission success probability */
         element = new Element("success_ratio_tx");
         element.setText(String.valueOf(SUCCESS_RATIO_TX));
@@ -503,6 +543,10 @@ public class LogisticLoss extends AbstractRadioMedium {
             if (element.getName().equals("transmitting_range")) {
                 TRANSMITTING_RANGE = Double.parseDouble(element.getText());
                 INTERFERENCE_RANGE = TRANSMITTING_RANGE;
+            }
+
+            if (element.getName().equals("tx_power_reference_dbm")) {
+                TX_POWER_REFERENCE_DBM = Double.parseDouble(element.getText());
             }
 
             if (element.getName().equals("success_ratio_tx")) {
