@@ -61,14 +61,15 @@ import org.contikios.cooja.mote.memory.MemoryInterface.Symbol;
 public class MspDiagState implements DiagState {
   private static final String SYMBOL = "diag_snapshot";
   private static final int MAGIC = 0xD1A6;
-  private static final int VERSION = 2;
+  private static final int VERSION = 3;
 
   private static final int OFF_MAGIC = 0;
   private static final int OFF_VERSION = 2;
   private static final int OFF_NODE = 6;
   private static final int OFF_PTX = 8;
   private static final int OFF_CTRL = 10;
-  private static final int OFF_RPL = 30;
+  private static final int OFF_MAC = 30;
+  private static final int OFF_RPL = 46;
 
   private static final int OFF_RPL_USED = 0;
   private static final int OFF_RPL_STATE = 1;
@@ -139,6 +140,11 @@ public class MspDiagState implements DiagState {
         u16(data, OFF_CTRL + 8), u16(data, OFF_CTRL + 10),
         u16(data, OFF_CTRL + 12), u16(data, OFF_CTRL + 14),
         u16(data, OFF_CTRL + 16), u16(data, OFF_CTRL + 18));
+    Mac mac = new Mac(
+        u16(data, OFF_MAC), u16(data, OFF_MAC + 2),
+        u16(data, OFF_MAC + 4), u16(data, OFF_MAC + 6),
+        u16(data, OFF_MAC + 8), u16(data, OFF_MAC + 10),
+        u16(data, OFF_MAC + 12), u16(data, OFF_MAC + 14));
 
     int count = Math.min(data[OFF_RPL + OFF_RPL_NBR_COUNT] & 0xff, maxNeighbors);
     List<Neighbor> neighbors = new ArrayList<>(count);
@@ -158,7 +164,7 @@ public class MspDiagState implements DiagState {
         u16(data, OFF_RPL + OFF_RPL_RANK), addrId(data, OFF_RPL + OFF_RPL_PARENT),
         u16(data, OFF_RPL + OFF_RPL_PARENT_RANK),
         u16(data, OFF_RPL + OFF_RPL_PARENT_ETX),
-        b.getShort(OFF_RPL + OFF_RPL_PARENT_RSSI), counters,
+        b.getShort(OFF_RPL + OFF_RPL_PARENT_RSSI), counters, mac,
         List.copyOf(neighbors));
   }
 
@@ -192,6 +198,17 @@ public class MspDiagState implements DiagState {
     ctrl.put("udp_tx", counters.udpTx());
     ctrl.put("udp_rx", counters.udpRx());
 
+    Mac mac = snapshot.mac();
+    Map<String, Object> macCounters = new LinkedHashMap<>();
+    macCounters.put("tx_data", mac.txData());
+    macCounters.put("rx_data", mac.rxData());
+    macCounters.put("tx_uc", mac.txUc());
+    macCounters.put("rx_uc", mac.rxUc());
+    macCounters.put("tx_bc", mac.txBc());
+    macCounters.put("rx_bc", mac.rxBc());
+    macCounters.put("tx_ack", mac.txAck());
+    macCounters.put("rx_ack", mac.rxAck());
+
     List<Map<String, Object>> neighbors = new ArrayList<>();
     for (Neighbor neighbor : snapshot.neighbors()) {
       Map<String, Object> n = new LinkedHashMap<>();
@@ -211,6 +228,7 @@ public class MspDiagState implements DiagState {
     Map<String, Object> state = new LinkedHashMap<>();
     state.put("rpl", rpl);
     state.put("ctrl", ctrl);
+    state.put("mac", macCounters);
     state.put("neighbors", neighbors);
     return state;
   }
@@ -254,12 +272,16 @@ public class MspDiagState implements DiagState {
                           int udpTx, int udpRx) {
   }
 
+  private record Mac(int txData, int rxData, int txUc, int rxUc,
+                     int txBc, int rxBc, int txAck, int rxAck) {
+  }
+
   private record Neighbor(int address, int rank, int etx, int rssi, int freshness,
                           boolean parent, int tx, int acked, int rx, int drops) {
   }
 
   private record Snapshot(int node, int txPowerDbm, DagState state, int rank,
                           int parent, int parentRank, int parentEtx, int parentRssi,
-                          Counters counters, List<Neighbor> neighbors) {
+                          Counters counters, Mac mac, List<Neighbor> neighbors) {
   }
 }
