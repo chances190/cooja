@@ -46,6 +46,7 @@ import org.contikios.cooja.mspmote.interfaces.MspButton;
 import org.contikios.cooja.mspmote.interfaces.MspClock;
 import org.contikios.cooja.mspmote.interfaces.MspDebugOutput;
 import org.contikios.cooja.mspmote.interfaces.MspDefaultSerial;
+import org.contikios.cooja.mspmote.interfaces.MspDiagState;
 import org.contikios.cooja.mspmote.interfaces.MspLED;
 import org.contikios.cooja.mspmote.interfaces.MspMoteID;
 import se.sics.mspsim.core.MSP430;
@@ -107,6 +108,7 @@ public class Z1MoteType extends MspMoteType {
                 MoteAttributes.class,
                 MspClock.class,
                 MspMoteID.class,
+                MspDiagState.class,
                 MspButton.class,
 //                SkyFlash.class,
                 Msp802154Radio.class,
