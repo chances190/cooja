@@ -78,8 +78,8 @@ public class MSP430f2617Config extends MSP430Config {
 
         /* configure memory */
         infoMemConfig(0x1000, 128 * 2);
-        mainFlashConfig(0x3100, 92 * 1024);
-        ramConfig(0x1100, 8 * 1024);
+        mainFlashConfig(0x4dfe, 0x15302);
+        ramConfig(0x1100, 0x3cfe);
         ramMirrorConfig(0x200, 2 * 1024, 0x1100);
     }
 
