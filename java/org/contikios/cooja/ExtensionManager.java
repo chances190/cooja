@@ -44,6 +44,7 @@ import org.contikios.cooja.mspmote.plugins.MspStackWatcher;
 import org.contikios.cooja.plugins.BaseRSSIconf;
 import org.contikios.cooja.plugins.BufferListener;
 import org.contikios.cooja.plugins.DGRMConfigurator;
+import org.contikios.cooja.plugins.DiagLogger;
 import org.contikios.cooja.plugins.LogListener;
 import org.contikios.cooja.plugins.Mobility;
 import org.contikios.cooja.plugins.MoteInformation;
@@ -72,6 +73,7 @@ public class ExtensionManager {
   static final LinkedHashMap<String, Class<? extends RadioMedium>> builtinRadioMediums = new LinkedHashMap<>();
   static {
     registerBuiltinPlugin(Visualizer.class);
+    registerBuiltinPlugin(DiagLogger.class);
     registerBuiltinPlugin(LogListener.class);
     registerBuiltinPlugin(TimeLine.class);
     registerBuiltinPlugin(Mobility.class);
