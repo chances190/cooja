@@ -45,6 +45,16 @@ public class SkyMote extends MspMote {
     skyNode = node;
   }
 
+  @Override
+  protected double cpuActiveCurrentMa() {
+    return 2.4;
+  }
+
+  @Override
+  protected double cpuLpmCurrentMa() {
+    return 0.021;
+  }
+
   /*private void configureWithMacAddressesTxt(int id) {
     String txt =
       "18 MAC 00:12:74:00:11:2b:0a:e9\n" +

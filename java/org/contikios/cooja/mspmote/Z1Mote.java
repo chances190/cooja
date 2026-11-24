@@ -42,6 +42,16 @@ class Z1Mote extends MspMote {
     }
 
     @Override
+    protected double cpuActiveCurrentMa() {
+        return 10;
+    }
+
+    @Override
+    protected double cpuLpmCurrentMa() {
+        return 0.023;
+    }
+
+    @Override
     public String toString() {
         return "Z1 " + getID();
     }

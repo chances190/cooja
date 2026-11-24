@@ -842,6 +842,11 @@ public class CC1120 extends Radio802154 implements USARTListener {
         public CC1120RadioState getState() {
                 return state;
         }
+
+        public void powerOff() {
+                setState(CC1120RadioState.CC1120_STATE_SLEEP);
+        }
+
         public interface StateListener {
                 void newState(CC1120RadioState state);
         }

@@ -509,6 +509,10 @@ public class MSP430Core extends Chip implements MSP430Constants {
     }
   }
 
+  public boolean isActive() {
+    return !cpuOff;
+  }
+
   public int readRegister(int r) {
     int value;
     RegisterMonitor rrm = regReadMonitors[r];
