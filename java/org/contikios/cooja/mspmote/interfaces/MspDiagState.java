@@ -47,38 +47,41 @@ import org.contikios.cooja.mote.memory.MemoryInterface;
 import org.contikios.cooja.mote.memory.MemoryInterface.Symbol;
 
 /**
- * Decodes the RPL snapshot that this experiment publishes in {@code
- * diag_snapshot}.
+ * Decodes the experiment wrapper around {@code struct rpl_snapshot}.
  *
- * <p>The offsets mirror {@code firmware/diag.h}. Two identical consecutive
- * reads are required so a snapshot being rewritten is never decoded.
+ * <p>The wrapper offsets mirror {@code firmware/diag.h}; the embedded RPL part
+ * mirrors {@code os/net/routing/rpl-lite/rpl-snapshot.h}. Two identical
+ * consecutive reads are required so a snapshot being rewritten is never
+ * decoded.
  *
- * <p>Experiment-local: the layout is owned by {@code firmware/diag.h}, not by
+ * <p>Experiment-local: the wrapper is owned by {@code firmware/diag.h}, not by
  * Contiki-NG, so this class is not part of the Cooja upstream API.
  */
 @ClassDescription("RPL diag state")
 public class MspDiagState implements DiagState {
   private static final String SYMBOL = "diag_snapshot";
   private static final int MAGIC = 0xD1A6;
-  private static final int VERSION = 1;
-  private static final int MAX_NEIGHBORS = 25;
-  private static final int NEIGHBOR_SIZE = 18;
+  private static final int VERSION = 2;
 
   private static final int OFF_MAGIC = 0;
   private static final int OFF_VERSION = 2;
-  private static final int OFF_STATE = 3;
   private static final int OFF_NODE = 6;
   private static final int OFF_PTX = 8;
-  private static final int OFF_NBR_COUNT = 9;
-  private static final int OFF_RANK = 10;
-  private static final int OFF_PARENT = 12;
-  private static final int OFF_PARENT_RANK = 14;
-  private static final int OFF_PARENT_ETX = 16;
-  private static final int OFF_PARENT_RSSI = 18;
-  private static final int OFF_CTRL = 20;
-  private static final int OFF_NEIGHBOR = 40;
+  private static final int OFF_CTRL = 10;
+  private static final int OFF_RPL = 30;
 
-  private static final int SNAPSHOT_SIZE = OFF_NEIGHBOR + MAX_NEIGHBORS * NEIGHBOR_SIZE;
+  private static final int OFF_RPL_USED = 0;
+  private static final int OFF_RPL_STATE = 1;
+  private static final int OFF_RPL_RANK = 2;
+  private static final int OFF_RPL_PARENT = 4;
+  private static final int OFF_RPL_PARENT_RANK = 12;
+  private static final int OFF_RPL_PARENT_ETX = 14;
+  private static final int OFF_RPL_PARENT_RSSI = 16;
+  private static final int OFF_RPL_NBR_COUNT = 18;
+  private static final int OFF_RPL_NEIGHBORS = 20;
+
+  private static final int RPL_NEIGHBOR_SIZE = 24;
+  private static final int MIN_SNAPSHOT_SIZE = OFF_RPL + OFF_RPL_NEIGHBORS;
   private static final int READ_ATTEMPTS = 3;
 
   private final Mote mote;
@@ -104,29 +107,31 @@ public class MspDiagState implements DiagState {
       memory = current;
       symbol = current.getSymbolMap().get(SYMBOL);
     }
-    if (symbol == null || symbol.size != SNAPSHOT_SIZE) {
+    if (symbol == null || symbol.size < MIN_SNAPSHOT_SIZE
+        || (symbol.size - MIN_SNAPSHOT_SIZE) % RPL_NEIGHBOR_SIZE != 0) {
       return null;
     }
+    int maxNeighbors = (symbol.size - MIN_SNAPSHOT_SIZE) / RPL_NEIGHBOR_SIZE;
     for (int attempt = 0; attempt < READ_ATTEMPTS; attempt++) {
-      byte[] data = memory.getMemorySegment(symbol.addr, SNAPSHOT_SIZE);
-      if (!valid(data)) {
+      byte[] data = memory.getMemorySegment(symbol.addr, symbol.size);
+      if (!valid(data, maxNeighbors)) {
         continue;
       }
-      byte[] check = memory.getMemorySegment(symbol.addr, SNAPSHOT_SIZE);
+      byte[] check = memory.getMemorySegment(symbol.addr, symbol.size);
       if (Arrays.equals(data, check)) {
-        return decode(data);
+        return decode(data, maxNeighbors);
       }
     }
     return null;
   }
 
-  private static boolean valid(byte[] data) {
+  private static boolean valid(byte[] data, int maxNeighbors) {
     return u16(data, OFF_MAGIC) == MAGIC
         && (data[OFF_VERSION] & 0xff) == VERSION
-        && (data[OFF_NBR_COUNT] & 0xff) <= MAX_NEIGHBORS;
+        && (data[OFF_RPL + OFF_RPL_NBR_COUNT] & 0xff) <= maxNeighbors;
   }
 
-  private static Snapshot decode(byte[] data) {
+  private static Snapshot decode(byte[] data, int maxNeighbors) {
     ByteBuffer b = ByteBuffer.wrap(data).order(ByteOrder.LITTLE_ENDIAN);
     Counters counters = new Counters(
         u16(data, OFF_CTRL), u16(data, OFF_CTRL + 2),
@@ -134,21 +139,32 @@ public class MspDiagState implements DiagState {
         u16(data, OFF_CTRL + 8), u16(data, OFF_CTRL + 10),
         u16(data, OFF_CTRL + 12), u16(data, OFF_CTRL + 14),
         u16(data, OFF_CTRL + 16), u16(data, OFF_CTRL + 18));
-    int count = data[OFF_NBR_COUNT] & 0xff;
+
+    int count = Math.min(data[OFF_RPL + OFF_RPL_NBR_COUNT] & 0xff, maxNeighbors);
     List<Neighbor> neighbors = new ArrayList<>(count);
     for (int i = 0; i < count; i++) {
-      int off = OFF_NEIGHBOR + i * NEIGHBOR_SIZE;
+      int off = OFF_RPL + OFF_RPL_NEIGHBORS + i * RPL_NEIGHBOR_SIZE;
       neighbors.add(new Neighbor(
-          u16(data, off), u16(data, off + 2), u16(data, off + 4),
-          b.getShort(off + 6), data[off + 8] & 0xff, data[off + 9] != 0,
-          u16(data, off + 10), u16(data, off + 12),
-          u16(data, off + 14), u16(data, off + 16)));
+          addrId(data, off), u16(data, off + 8), u16(data, off + 10),
+          b.getShort(off + 12), data[off + 14] & 0xff, data[off + 15] != 0,
+          u16(data, off + 16), u16(data, off + 18),
+          u16(data, off + 20), u16(data, off + 22)));
     }
+
+    int used = data[OFF_RPL + OFF_RPL_USED] & 0xff;
+    int state = used != 0 ? data[OFF_RPL + OFF_RPL_STATE] & 0xff : 0xff;
     return new Snapshot(
-        u16(data, OFF_NODE), data[OFF_PTX], DagState.of(data[OFF_STATE] & 0xff),
-        u16(data, OFF_RANK), u16(data, OFF_PARENT),
-        u16(data, OFF_PARENT_RANK), u16(data, OFF_PARENT_ETX),
-        b.getShort(OFF_PARENT_RSSI), counters, List.copyOf(neighbors));
+        u16(data, OFF_NODE), data[OFF_PTX], DagState.of(state),
+        u16(data, OFF_RPL + OFF_RPL_RANK), addrId(data, OFF_RPL + OFF_RPL_PARENT),
+        u16(data, OFF_RPL + OFF_RPL_PARENT_RANK),
+        u16(data, OFF_RPL + OFF_RPL_PARENT_ETX),
+        b.getShort(OFF_RPL + OFF_RPL_PARENT_RSSI), counters,
+        List.copyOf(neighbors));
+  }
+
+  /* The Z1 link-layer address is 8 bytes; the node id uses its last two. */
+  private static int addrId(byte[] data, int offset) {
+    return (data[offset + 7] & 0xff) | ((data[offset + 6] & 0xff) << 8);
   }
 
   private static Map<String, Object> toMap(Snapshot snapshot) {
