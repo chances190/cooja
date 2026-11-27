@@ -323,6 +323,40 @@ public abstract class AbstractRadioMedium implements RadioMedium {
 	 * @return New connection
 	 */
   protected abstract RadioConnection createConnections(Radio radio);
+
+	/**
+	 * Returns the power an active connection delivers to a receiver. Mediums
+	 * that model the power override this.
+	 *
+	 * @param connection Active connection
+	 * @param receiver Receiving radio
+	 * @return Power at the receiver, in dBm; negative infinity if none
+	 */
+	protected double getReceivedPowerDbm(RadioConnection connection, Radio receiver) {
+		return Double.NEGATIVE_INFINITY;
+	}
+
+	/**
+	 * Returns the sum of the concurrent transmissions at a receiver.
+	 *
+	 * @param receiver Receiving radio
+	 * @param excludedSource Source to leave out, or null
+	 * @return Interference power, in dBm; negative infinity if none
+	 */
+	public double getInterferenceDbm(Radio receiver, Radio excludedSource) {
+		double sumMw = 0;
+		for (RadioConnection connection : getActiveConnections()) {
+			var source = connection.getSource();
+			if (source == excludedSource || channelsDiffer(source.getChannel(), receiver.getChannel())) {
+				continue;
+			}
+			double dbm = getReceivedPowerDbm(connection, receiver);
+			if (Double.isFinite(dbm)) {
+				sumMw += Math.pow(10, dbm / 10);
+			}
+		}
+		return sumMw == 0 ? Double.NEGATIVE_INFINITY : 10 * Math.log10(sumMw);
+	}
 	
 	/**
 	 * Updates all radio interfaces' signal strengths according to

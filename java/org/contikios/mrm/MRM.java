@@ -171,7 +171,7 @@ public class MRM extends AbstractRadioMedium {
       };
       double[] probData = currentChannelModel.getProbability(
           txPair,
-          -Double.MAX_VALUE /* TODO Include interference */
+          getInterferenceDbm(recv, sender)
       );
 
       double recvProb = probData[0];
@@ -179,7 +179,7 @@ public class MRM extends AbstractRadioMedium {
       if (recvProb == 1.0 || random.nextDouble() < recvProb) {
         /* Yes, the receiver *may* receive this packet (it's strong enough) */
         if (!recv.isRadioOn()) {
-          newConnection.addInterfered(recv);
+          newConnection.addInterfered(recv, recvSignalStrength);
           recv.interfereAnyReception();
         } else if (recv.isInterfered()) {
           if (WITH_CAPTURE_EFFECT) {
@@ -276,19 +276,13 @@ public class MRM extends AbstractRadioMedium {
       radio.setCurrentSignalStrength(background);
     }
 
-    /* Active radio connections */
+    /* Active radio connections: each radio sees the sum of the sources */
     RadioConnection[] conns = getActiveConnections();
-    for (RadioConnection conn : conns) {
-      var srcChannel = conn.getSource().getChannel();
-      for (Radio dstRadio : conn.getDestinations()) {
-        double signalStrength = ((MRMRadioConnection) conn).getDestinationSignalStrength(dstRadio);
-        var dstChannel = dstRadio.getChannel();
-        if (channelsDiffer(srcChannel, dstChannel)) {
-          continue;
-        }
-        if (dstRadio.getCurrentSignalStrength() < signalStrength) {
-          dstRadio.setCurrentSignalStrength(signalStrength);
-        }
+    for (Radio radio : getRegisteredRadios()) {
+      double interference = getInterferenceDbm(radio, null);
+      if (Double.isFinite(interference)) {
+        radio.setCurrentSignalStrength(10 * Math.log10(
+            Math.pow(10, background / 10) + Math.pow(10, interference / 10)));
       }
     }
 
@@ -300,11 +294,6 @@ public class MRM extends AbstractRadioMedium {
         if (channelsDiffer(srcChannel, intfChannel)) {
           continue;
         }
-        double signalStrength = ((MRMRadioConnection) conn).getInterferenceSignalStrength(intfRadio);
-        if (intfRadio.getCurrentSignalStrength() < signalStrength) {
-                intfRadio.setCurrentSignalStrength(signalStrength);
-        }
-
         if (!intfRadio.isInterfered()) {
                 intfRadio.interfereAnyReception();
         }
@@ -369,6 +358,11 @@ public class MRM extends AbstractRadioMedium {
   }
 
   @Override
+  protected double getReceivedPowerDbm(RadioConnection connection, Radio receiver) {
+    return ((MRMRadioConnection) connection).getSignalStrength(receiver);
+  }
+
+  @Override
   public Collection<Element> getConfigXML() {
     return currentChannelModel.getConfigXML();
   }
@@ -427,18 +421,8 @@ public class MRM extends AbstractRadioMedium {
       addInterfered(radio);
     }
 
-    double getDestinationSignalStrength(Radio radio) {
-        if (signalStrengths.get(radio) == null) {
-                return Double.MIN_VALUE;
-        }
-      return signalStrengths.get(radio);
-    }
-
-    double getInterferenceSignalStrength(Radio radio) {
-        if (signalStrengths.get(radio) == null) {
-                return Double.MIN_VALUE;
-        }
-      return signalStrengths.get(radio);
+    double getSignalStrength(Radio radio) {
+      return signalStrengths.getOrDefault(radio, Double.NEGATIVE_INFINITY);
     }
   }
 

@@ -143,4 +143,17 @@ class ChannelModelTest {
     channel.setParameterValue(Parameter.bg_noise_mean, -80.0);
     assertEquals(quiet, probability(channel, tx), 1e-12);
   }
+
+  @Test
+  void testInterferenceEqualToTheNoiseFloorCostsThreeDb() {
+    /* Interference adds to the noise, so the signal the receiver needs is the
+       power sum of the sensitivity and the interference. */
+    ChannelModel channel = new ChannelModel(null);
+    double noiseFloor = channel.getParameterDoubleValue(Parameter.bg_noise_mean);
+    double threeDb = 10 * Math.log10(2);
+    assertEquals(
+        probability(channel, pair(1000.0, 0.0, CC2420_SENSITIVITY_DBM + threeDb)),
+        channel.getProbability(pair(1000.0, 0.0, CC2420_SENSITIVITY_DBM), noiseFloor)[0],
+        1e-9);
+  }
 }

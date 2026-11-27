@@ -1518,9 +1518,8 @@ public class ChannelModel {
     double noiseVariance = getParameterDoubleValue(Parameter.bg_noise_var);
     double noiseMean = getParameterDoubleValue(Parameter.bg_noise_mean);
 
-    if (interference > noiseMean) {
-      noiseMean = interference;
-    }
+    /* Interference adds to the noise power */
+    noiseMean = 10 * Math.log10(Math.pow(10, noiseMean / 10) + Math.pow(10, interference / 10));
 
     if (getParameterBooleanValue(Parameter.apply_random)) {
       Random random = new Random(); /* TODO Use main random generator? */
@@ -1560,11 +1559,10 @@ public class ChannelModel {
     double signalStrength = snrData[2];
     double rxSensitivity = txPair.getRxSensitivity();
 
-    /* Detect at the receiver sensitivity: the SNR a signal needs to reach it
-       is the sensitivity minus the noise the SNR was measured against. */
-    double rxGain = getParameterBooleanValue(Parameter.rx_with_gain) ? txPair.getRxGain() : 0;
-    double noiseMean = signalStrength + rxGain - snrMean;
-    double threshold = rxSensitivity - noiseMean;
+    /* Detect at the receiver sensitivity: the noise floor cancels, and the
+       interference raises the signal the receiver needs. */
+    double noiseFloor = getParameterDoubleValue(Parameter.bg_noise_mean);
+    double threshold = rxSensitivity - noiseFloor;
 
     // If not random variable, probability is either 1 or 0
     if (snrVariance == 0) {
