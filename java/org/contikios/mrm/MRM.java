@@ -279,10 +279,18 @@ public class MRM extends AbstractRadioMedium {
     /* Active radio connections: each radio sees the sum of the sources */
     RadioConnection[] conns = getActiveConnections();
     for (Radio radio : getRegisteredRadios()) {
-      double interference = getInterferenceDbm(radio, null);
-      if (Double.isFinite(interference)) {
+      Radio desiredSource = null;
+      for (RadioConnection conn : conns) {
+        if (conn.isDestination(radio)) {
+          desiredSource = conn.getSource();
+          break;
+        }
+      }
+      double total = getInterferenceDbm(radio, null);
+      radio.setCurrentInterference(getInterferenceDbm(radio, desiredSource));
+      if (Double.isFinite(total)) {
         radio.setCurrentSignalStrength(10 * Math.log10(
-            Math.pow(10, background / 10) + Math.pow(10, interference / 10)));
+            Math.pow(10, background / 10) + Math.pow(10, total / 10)));
       }
     }
 

@@ -208,6 +208,29 @@ public abstract class Radio implements MoteInterface {
    */
   public abstract void setCurrentSignalStrength(double signalStrength);
 
+  private double currentInterference = Double.NEGATIVE_INFINITY;
+
+  /**
+   * Returns the power of the concurrent transmissions at this radio. Together
+   * with the signal strength it gives the signal the radio is receiving and
+   * the noise it is receiving it against.
+   *
+   * @return Interference power (dBm), or negative infinity if none
+   */
+  public final double getCurrentInterference() {
+    return currentInterference;
+  }
+
+  /**
+   * Sets the interference power. This method should normally be called by the
+   * radio medium.
+   *
+   * @param interference Interference power (dBm), or negative infinity if none
+   */
+  public final void setCurrentInterference(double interference) {
+    currentInterference = interference;
+  }
+
   /**
    * Returns the current radio channel number.
    *

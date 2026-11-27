@@ -41,9 +41,10 @@ import org.slf4j.LoggerFactory;
 /**
  * Extension of MSPSim 802.15.4 radio wrapper with bit-level errors.
  * <p>
- * Only errors due to signal fading are supported (as opposed to errors to interference).
- * Interesting modelling effects can be obtained if this is used together with a dynamic
- * channel fading model.
+ * The bit error rate follows the signal-to-interference margin: interference
+ * raises the noise the signal is received against. Interesting modelling
+ * effects can be obtained if this is used together with a dynamic channel
+ * fading model.
  *
  * @author Atis Elsts
  */
@@ -314,15 +315,27 @@ public class Msp802154BitErrorRadio extends Msp802154Radio {
     0.0022756787254125
   };
 
-  private double getBitErrorRate(double signal) {
-    double sensitivity = getRxSensitivity();
-    if (signal <= sensitivity) {
+  /* signalDbm is the total power at the radio, interference included. */
+  static double signalToNoiseMargin(double signalDbm, double interferenceDbm, double sensitivityDbm) {
+    if (!Double.isFinite(interferenceDbm)) {
+      return signalDbm - sensitivityDbm;
+    }
+    double signalMw = Math.pow(10, signalDbm / 10) - Math.pow(10, interferenceDbm / 10);
+    if (signalMw <= 0) {
+      return Double.NEGATIVE_INFINITY;
+    }
+    double noiseMw = Math.pow(10, sensitivityDbm / 10) + Math.pow(10, interferenceDbm / 10);
+    return 10 * Math.log10(signalMw / noiseMw);
+  }
+
+  private double getBitErrorRate(double signalDbm) {
+    double marginDb = signalToNoiseMargin(signalDbm, getCurrentInterference(), getRxSensitivity());
+    if (marginDb <= 0) {
       return 0.5;
-    } else if (signal >= sensitivity + GOOD_SIGNAL_MARGIN_DB) {
+    } else if (marginDb >= GOOD_SIGNAL_MARGIN_DB) {
       return 0.0;
     } else {
-      long position = Math.round((signal - sensitivity) * 10.0);
-      return bitErrorRateTable[(int)position];
+      return bitErrorRateTable[(int) Math.round(marginDb * 10.0)];
     }
   }
 
