@@ -82,6 +82,14 @@ class LogisticLossTest {
   }
 
   @Test
+  void testInterferenceRaisesTheSensitivityByItsOwnPower() {
+    assertEquals(CC2420_SENSITIVITY_DBM + 10 * Math.log10(2),
+        LogisticLoss.effectiveSensitivity(CC2420_SENSITIVITY_DBM, CC2420_SENSITIVITY_DBM), 1e-9);
+    assertEquals(CC2420_SENSITIVITY_DBM,
+        LogisticLoss.effectiveSensitivity(CC2420_SENSITIVITY_DBM, Double.NEGATIVE_INFINITY), 1e-9);
+  }
+
+  @Test
   void testRangeBoundaryIsTheOnePercentPoint() {
     /* The cutoff and the curve have to agree, or links die inside the range. */
     double distance = range(0.0, PATH_LOSS_1M_DB, CC2420_SENSITIVITY_DBM);

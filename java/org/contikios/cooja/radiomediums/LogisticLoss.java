@@ -57,6 +57,7 @@ import org.slf4j.LoggerFactory;
  * - Models the signal level as a function of distance following a standard formula
  *   from the RF propagation theory
  * - Adds a random level of noise (AWGN) to the signal level of each packet
+ * - Accounts for concurrent transmissions at the receiver as interference
  * - Multiple Configurable parameters
  * - Visualization similar to UDGM visualization
  * <p>
@@ -205,14 +206,7 @@ public class LogisticLoss extends AbstractRadioMedium {
                     boolean receiveNewOk = random.nextDouble() < getRxSuccessProbability(sender, recv);
 
                     if (recv.isReceiving()) {
-                        /*
-                         * Compare new and old and decide whether to interfere.
-                         * XXX: this is a simplified check. Rather than looking at all N potential senders,
-                         * it looks at just this and the strongest one of the previous transmissions
-                         * (since updateSignalStrengths() updates the signal strength iff the previous one is weaker)
-                        */
-
-                        double oldSignal = recv.getCurrentSignalStrength();
+                        double oldSignal = getInterferenceDbm(recv, sender);
                         double newSignal = getRSSI(sender, recv);
 
                         boolean doInterfereOld;
@@ -270,7 +264,17 @@ public class LogisticLoss extends AbstractRadioMedium {
     }
 
     public double getRxSuccessProbability(Radio source, Radio dest) {
-        return receptionProbability(getRSSI(source, dest), dest.getRxSensitivity());
+        return receptionProbability(getRSSI(source, dest),
+            effectiveSensitivity(dest.getRxSensitivity(), getInterferenceDbm(dest, source)));
+    }
+
+    /* Interference raises the signal level the receiver needs by its own power. */
+    static double effectiveSensitivity(double sensitivityDbm, double interferenceDbm) {
+        if (!Double.isFinite(interferenceDbm)) {
+            return sensitivityDbm;
+        }
+        return 10 * Math.log10(Math.pow(10, sensitivityDbm / 10)
+            + Math.pow(10, interferenceDbm / 10));
     }
 
     /*
@@ -329,6 +333,11 @@ public class LogisticLoss extends AbstractRadioMedium {
     }
 
     private double getRSSI(Radio source, Radio dst) {
+        return getMeanRSSI(source, dst) + getAWGN();
+    }
+
+    /* Received power without the per-packet noise */
+    private double getMeanRSSI(Radio source, Radio dst) {
         double d = source.getPosition().getDistanceTo(dst.getPosition());
         if (d <= 0) {
             /* Do not allow the distance to be zero */
@@ -352,7 +361,12 @@ public class LogisticLoss extends AbstractRadioMedium {
             }
         }
 
-        return source.getCurrentOutputPower() - pathLossDb + getAWGN();
+        return source.getCurrentOutputPower() - pathLossDb;
+    }
+
+    @Override
+    protected double getReceivedPowerDbm(RadioConnection connection, Radio receiver) {
+        return getMeanRSSI(connection.getSource(), receiver);
     }
 
     private void updateTimeVariationComponent() {
@@ -382,21 +396,27 @@ public class LogisticLoss extends AbstractRadioMedium {
 
         /* Set signal strength to below strong on destinations */
         RadioConnection[] conns = getActiveConnections();
+
+        /* Each radio sees the sum of the active transmissions */
+        for (Radio radio : getRegisteredRadios()) {
+            radio.setCurrentSignalStrength(10 * Math.log10(
+                Math.pow(10, getBaseRssi(radio) / 10)
+                    + Math.pow(10, getInterferenceDbm(radio, null) / 10)));
+
+            Radio desiredSource = null;
+            for (RadioConnection conn : conns) {
+                if (conn.isDestination(radio)) {
+                    desiredSource = conn.getSource();
+                    break;
+                }
+            }
+            radio.setCurrentInterference(getInterferenceDbm(radio, desiredSource));
+        }
+
+        /* A transmitting radio reports a strong signal */
         for (RadioConnection conn : conns) {
             if (conn.getSource().getCurrentSignalStrength() < SS_STRONG) {
                 conn.getSource().setCurrentSignalStrength(SS_STRONG);
-            }
-            var srcChannel = conn.getSource().getChannel();
-            for (Radio dstRadio : conn.getDestinations()) {
-                var dstChannel = dstRadio.getChannel();
-                if (channelsDiffer(srcChannel, dstChannel)) {
-                    continue;
-                }
-
-                double rssi = getRSSI(conn.getSource(), dstRadio);
-                if (dstRadio.getCurrentSignalStrength() < rssi) {
-                    dstRadio.setCurrentSignalStrength(rssi);
-                }
             }
         }
 
@@ -407,11 +427,6 @@ public class LogisticLoss extends AbstractRadioMedium {
                 var intfChannel = intfRadio.getChannel();
                 if (channelsDiffer(srcChannel, intfChannel)) {
                     continue;
-                }
-
-                double rssi = getRSSI(conn.getSource(), intfRadio);
-                if (intfRadio.getCurrentSignalStrength() < rssi) {
-                    intfRadio.setCurrentSignalStrength(rssi);
                 }
 
                 /*
